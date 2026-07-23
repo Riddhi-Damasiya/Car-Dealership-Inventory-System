@@ -1,68 +1,61 @@
-"""Vehicle CRUD routes."""
+"""Refactored vehicle CRUD routes using service layer."""
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy import func
 
 from app.database import get_db
 from app.dependencies import get_current_admin_user, get_current_user
-from app.models import User, Vehicle
+from app.models import User
 from app.schemas import (
     VehicleCreate,
     VehicleListResponse,
     VehicleResponse,
     VehicleUpdate,
 )
+from app.services.vehicle_service import VehicleService
 
 router = APIRouter(prefix="/api/vehicles", tags=["vehicles"])
+
+
+def get_vehicle_service(db: AsyncSession = Depends(get_db)) -> VehicleService:
+    """Dependency injection for vehicle service.
+
+    Args:
+        db: Database session
+
+    Returns:
+        VehicleService instance
+    """
+    return VehicleService(db)
 
 
 @router.post("", response_model=VehicleResponse, status_code=201)
 async def create_vehicle(
     vehicle_data: VehicleCreate,
     current_user: Annotated[User, Depends(get_current_admin_user)],
-    db: AsyncSession = Depends(get_db),
-):
+    service: VehicleService = Depends(get_vehicle_service),
+) -> VehicleResponse:
     """Create a new vehicle.
 
     Args:
         vehicle_data: Vehicle creation data
         current_user: Current authenticated admin user
-        db: Database session
+        service: Vehicle service
 
     Returns:
         Created vehicle
 
     Raises:
-        HTTPException: If user is not admin
+        HTTPException: If validation fails or user is not admin
     """
-    # Validate price is non-negative
     try:
-        price_float = float(vehicle_data.price)
-        if price_float < 0:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Price must be non-negative",
-            )
-    except ValueError:
+        return await service.create_vehicle(vehicle_data)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Price must be a valid decimal number",
+            detail=str(e),
         )
-
-    new_vehicle = Vehicle(
-        make=vehicle_data.make,
-        model=vehicle_data.model,
-        category=vehicle_data.category,
-        price=vehicle_data.price,
-        quantity=vehicle_data.quantity,
-    )
-    db.add(new_vehicle)
-    await db.commit()
-    await db.refresh(new_vehicle)
-    return new_vehicle
 
 
 @router.get("", response_model=VehicleListResponse)
@@ -70,49 +63,34 @@ async def list_vehicles(
     skip: int = 0,
     limit: int = 10,
     current_user: Annotated[User, Depends(get_current_user)] = None,
-    db: AsyncSession = Depends(get_db),
-):
+    service: VehicleService = Depends(get_vehicle_service),
+) -> VehicleListResponse:
     """List all vehicles with pagination.
 
     Args:
-        skip: Number of items to skip
-        limit: Maximum items to return
+        skip: Number of items to skip (default: 0)
+        limit: Maximum items to return (default: 10)
         current_user: Current authenticated user
-        db: Database session
+        service: Vehicle service
 
     Returns:
         Paginated list of vehicles
     """
-    # Get total count
-    count_result = await db.execute(select(func.count(Vehicle.id)))
-    total = count_result.scalar() or 0
-
-    # Get vehicles with pagination
-    result = await db.execute(
-        select(Vehicle).offset(skip).limit(limit).order_by(Vehicle.id)
-    )
-    vehicles = result.scalars().all()
-
-    return VehicleListResponse(
-        items=vehicles,
-        total=total,
-        skip=skip,
-        limit=limit,
-    )
+    return await service.list_vehicles(skip=skip, limit=limit)
 
 
 @router.get("/{vehicle_id}", response_model=VehicleResponse)
 async def get_vehicle(
     vehicle_id: int,
     current_user: Annotated[User, Depends(get_current_user)] = None,
-    db: AsyncSession = Depends(get_db),
-):
+    service: VehicleService = Depends(get_vehicle_service),
+) -> VehicleResponse:
     """Get a specific vehicle by ID.
 
     Args:
         vehicle_id: Vehicle ID
         current_user: Current authenticated user
-        db: Database session
+        service: Vehicle service
 
     Returns:
         Vehicle details
@@ -120,16 +98,13 @@ async def get_vehicle(
     Raises:
         HTTPException: If vehicle not found
     """
-    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
-    vehicle = result.scalars().first()
-
+    vehicle = await service.get_vehicle(vehicle_id)
     if not vehicle:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Vehicle not found",
         )
-
-    return vehicle
+    return VehicleResponse.model_validate(vehicle)
 
 
 @router.put("/{vehicle_id}", response_model=VehicleResponse)
@@ -137,80 +112,56 @@ async def update_vehicle(
     vehicle_id: int,
     vehicle_data: VehicleUpdate,
     current_user: Annotated[User, Depends(get_current_admin_user)],
-    db: AsyncSession = Depends(get_db),
-):
+    service: VehicleService = Depends(get_vehicle_service),
+) -> VehicleResponse:
     """Update a vehicle.
 
     Args:
         vehicle_id: Vehicle ID
         vehicle_data: Updated vehicle data
         current_user: Current authenticated admin user
-        db: Database session
+        service: Vehicle service
 
     Returns:
         Updated vehicle
 
     Raises:
-        HTTPException: If vehicle not found or user is not admin
+        HTTPException: If vehicle not found, validation fails, or user is not admin
     """
-    # Validate price is non-negative
     try:
-        price_float = float(vehicle_data.price)
-        if price_float < 0:
+        vehicle = await service.update_vehicle(vehicle_id, vehicle_data)
+        if not vehicle:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Price must be non-negative",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Vehicle not found",
             )
-    except ValueError:
+        return VehicleResponse.model_validate(vehicle)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Price must be a valid decimal number",
+            detail=str(e),
         )
-
-    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
-    vehicle = result.scalars().first()
-
-    if not vehicle:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vehicle not found",
-        )
-
-    vehicle.make = vehicle_data.make
-    vehicle.model = vehicle_data.model
-    vehicle.category = vehicle_data.category
-    vehicle.price = vehicle_data.price
-    vehicle.quantity = vehicle_data.quantity
-
-    await db.commit()
-    await db.refresh(vehicle)
-    return vehicle
 
 
 @router.delete("/{vehicle_id}", status_code=204)
 async def delete_vehicle(
     vehicle_id: int,
     current_user: Annotated[User, Depends(get_current_admin_user)],
-    db: AsyncSession = Depends(get_db),
-):
+    service: VehicleService = Depends(get_vehicle_service),
+) -> None:
     """Delete a vehicle.
 
     Args:
         vehicle_id: Vehicle ID
         current_user: Current authenticated admin user
-        db: Database session
+        service: Vehicle service
 
     Raises:
         HTTPException: If vehicle not found or user is not admin
     """
-    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
-    vehicle = result.scalars().first()
-
-    if not vehicle:
+    deleted = await service.delete_vehicle(vehicle_id)
+    if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Vehicle not found",
         )
-
-    await db.delete(vehicle)
-    await db.commit()

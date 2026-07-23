@@ -1,4 +1,4 @@
-"""Updated conftest with admin and user fixtures."""
+"""Updated test fixtures with VehicleService injection."""
 import asyncio
 from typing import AsyncGenerator
 
@@ -11,6 +11,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import User
 from app.services.auth_service import hash_password, create_access_token
+from app.services.vehicle_service import VehicleService
 
 
 @pytest.fixture(scope="session")
@@ -44,6 +45,12 @@ async def test_db(test_db_engine) -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
         await session.rollback()
+
+
+@pytest.fixture
+async def vehicle_service(test_db: AsyncSession) -> VehicleService:
+    """Create a VehicleService instance for testing."""
+    return VehicleService(test_db)
 
 
 @pytest.fixture
