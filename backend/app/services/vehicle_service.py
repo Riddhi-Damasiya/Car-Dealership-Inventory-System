@@ -6,7 +6,16 @@ from sqlalchemy.future import select
 from sqlalchemy import func, and_
 
 from app.models import Vehicle
-from app.schemas import VehicleCreate, VehicleListResponse, VehicleResponse, VehicleUpdate
+from app.schemas import (
+    VehicleCreate,
+    VehicleListResponse,
+    VehicleResponse,
+    VehicleUpdate,
+    PurchaseRequest,
+    RestockRequest,
+    PurchaseResponse,
+    RestockResponse,
+)
 
 
 class VehicleService:
@@ -220,3 +229,79 @@ class VehicleService:
         vehicles = result.scalars().all()
 
         return [VehicleResponse.model_validate(v) for v in vehicles]
+
+    async def purchase_vehicle(
+        self, vehicle_id: int, purchase_data: PurchaseRequest
+    ) -> PurchaseResponse:
+        """Purchase a vehicle by decrementing its quantity.
+
+        Args:
+            vehicle_id: Vehicle ID
+            purchase_data: Purchase request with quantity
+
+        Returns:
+            Purchase confirmation response
+
+        Raises:
+            ValueError: If vehicle not found or insufficient stock
+        """
+        vehicle = await self.get_vehicle(vehicle_id)
+        if not vehicle:
+            raise ValueError(f"Vehicle with ID {vehicle_id} not found")
+
+        if vehicle.quantity < purchase_data.quantity:
+            raise ValueError(
+                f"Insufficient stock. Available: {vehicle.quantity}, "
+                f"Requested: {purchase_data.quantity}"
+            )
+
+        # Calculate total price
+        total_price = Decimal(vehicle.price) * Decimal(purchase_data.quantity)
+
+        # Decrement quantity
+        vehicle.quantity -= purchase_data.quantity
+
+        await self.db.commit()
+        await self.db.refresh(vehicle)
+
+        return PurchaseResponse(
+            vehicle_id=vehicle.id,
+            quantity_purchased=purchase_data.quantity,
+            total_price=str(total_price),
+            remaining_quantity=vehicle.quantity,
+            message=f"Successfully purchased {purchase_data.quantity} "
+            f"{vehicle.make} {vehicle.model}(s). Total: ${total_price}",
+        )
+
+    async def restock_vehicle(
+        self, vehicle_id: int, restock_data: RestockRequest
+    ) -> RestockResponse:
+        """Restock a vehicle by incrementing its quantity.
+
+        Args:
+            vehicle_id: Vehicle ID
+            restock_data: Restock request with quantity
+
+        Returns:
+            Restock confirmation response
+
+        Raises:
+            ValueError: If vehicle not found
+        """
+        vehicle = await self.get_vehicle(vehicle_id)
+        if not vehicle:
+            raise ValueError(f"Vehicle with ID {vehicle_id} not found")
+
+        # Increment quantity
+        vehicle.quantity += restock_data.quantity
+
+        await self.db.commit()
+        await self.db.refresh(vehicle)
+
+        return RestockResponse(
+            vehicle_id=vehicle.id,
+            quantity_added=restock_data.quantity,
+            new_quantity=vehicle.quantity,
+            message=f"Successfully restocked {restock_data.quantity} "
+            f"{vehicle.make} {vehicle.model}(s). New quantity: {vehicle.quantity}",
+        )

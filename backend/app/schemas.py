@@ -102,3 +102,93 @@ class SearchParams(BaseModel):
     category: Optional[str] = Field(None, description="Filter by category")
     min_price: Optional[str] = Field(None, description="Filter by minimum price")
     max_price: Optional[str] = Field(None, description="Filter by maximum price")
+
+
+class PurchaseRequest(BaseModel):
+    """Purchase request schema for buying vehicles.
+
+    Attributes:
+        quantity: Number of vehicles to purchase (must be positive)
+    """
+
+    quantity: int = Field(..., gt=0, description="Quantity to purchase (positive)")
+
+
+class RestockRequest(BaseModel):
+    """Restock request schema for adding inventory.
+
+    Attributes:
+        quantity: Number of vehicles to add to stock (must be positive)
+    """
+
+    quantity: int = Field(..., gt=0, description="Quantity to restock (positive)")
+
+
+class PurchaseResponse(BaseModel):
+    """Purchase confirmation response.
+
+    Attributes:
+        vehicle_id: ID of purchased vehicle
+        quantity_purchased: Number of vehicles purchased
+        total_price: Total purchase price
+        remaining_quantity: Quantity remaining in stock
+        message: Confirmation message
+    """
+
+    vehicle_id: int = Field(..., description="Vehicle ID")
+    quantity_purchased: int = Field(..., description="Quantity purchased")
+    total_price: str = Field(..., description="Total purchase price")
+    remaining_quantity: int = Field(..., description="Remaining quantity in stock")
+    message: str = Field(..., description="Confirmation message")
+
+
+class RestockResponse(BaseModel):
+    """Restock confirmation response.
+
+    Attributes:
+        vehicle_id: ID of restocked vehicle
+        quantity_added: Number of vehicles added
+        new_quantity: New total quantity in stock
+        message: Confirmation message
+    """
+
+    vehicle_id: int = Field(..., description="Vehicle ID")
+    quantity_added: int = Field(..., description="Quantity added")
+    new_quantity: int = Field(..., description="New quantity in stock")
+    message: str = Field(..., description="Confirmation message")
+
+
+class UserLogin(BaseModel):
+    """User login schema.
+
+    Attributes:
+        email: User email
+        password: User password
+    """
+
+    email: str = Field(..., description="User email")
+    password: str = Field(..., description="User password")
+
+
+class UserRegister(BaseModel):
+    """User registration schema.
+
+    Attributes:
+        email: User email
+        password: User password
+    """
+
+    email: str = Field(..., description="User email")
+    password: str = Field(..., description="User password")
+
+
+class TokenResponse(BaseModel):
+    """Token response schema.
+
+    Attributes:
+        access_token: JWT access token
+        token_type: Type of token (e.g., bearer)
+    """
+
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(..., description="Token type")

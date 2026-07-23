@@ -12,6 +12,10 @@ from app.schemas import (
     VehicleListResponse,
     VehicleResponse,
     VehicleUpdate,
+    PurchaseRequest,
+    RestockRequest,
+    PurchaseResponse,
+    RestockResponse,
 )
 from app.services.vehicle_service import VehicleService
 
@@ -216,4 +220,64 @@ async def delete_vehicle(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Vehicle not found",
+        )
+
+
+@router.post("/{vehicle_id}/purchase", response_model=PurchaseResponse, status_code=200)
+async def purchase_vehicle(
+    vehicle_id: int,
+    purchase_data: PurchaseRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: VehicleService = Depends(get_vehicle_service),
+) -> PurchaseResponse:
+    """Purchase a vehicle (decrement quantity).
+
+    Args:
+        vehicle_id: Vehicle ID to purchase
+        purchase_data: Purchase request with quantity
+        current_user: Current authenticated user
+        service: Vehicle service
+
+    Returns:
+        Purchase confirmation response
+
+    Raises:
+        HTTPException: If vehicle not found or insufficient stock
+    """
+    try:
+        return await service.purchase_vehicle(vehicle_id, purchase_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/{vehicle_id}/restock", response_model=RestockResponse, status_code=200)
+async def restock_vehicle(
+    vehicle_id: int,
+    restock_data: RestockRequest,
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    service: VehicleService = Depends(get_vehicle_service),
+) -> RestockResponse:
+    """Restock a vehicle (increment quantity).
+
+    Args:
+        vehicle_id: Vehicle ID to restock
+        restock_data: Restock request with quantity
+        current_user: Current authenticated admin user
+        service: Vehicle service
+
+    Returns:
+        Restock confirmation response
+
+    Raises:
+        HTTPException: If vehicle not found or user is not admin
+    """
+    try:
+        return await service.restock_vehicle(vehicle_id, restock_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
         )
