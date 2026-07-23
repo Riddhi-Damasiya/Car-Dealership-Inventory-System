@@ -1,7 +1,7 @@
 """Refactored vehicle CRUD routes using service layer."""
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -77,6 +77,58 @@ async def list_vehicles(
         Paginated list of vehicles
     """
     return await service.list_vehicles(skip=skip, limit=limit)
+
+
+@router.get("/search", response_model=list[VehicleResponse])
+async def search_vehicles(
+    make: Optional[str] = Query(None, description="Filter by make"),
+    model: Optional[str] = Query(None, description="Filter by model"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    min_price: Optional[str] = Query(None, description="Minimum price"),
+    max_price: Optional[str] = Query(None, description="Maximum price"),
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    service: VehicleService = Depends(get_vehicle_service),
+) -> list[VehicleResponse]:
+    """Search and filter vehicles based on optional criteria.
+
+    All parameters are optional. When multiple filters are provided,
+    they are combined with AND logic (all must match).
+
+    Query Parameters:
+        make: Filter by vehicle manufacturer (case-insensitive partial match)
+        model: Filter by vehicle model (case-insensitive partial match)
+        category: Filter by vehicle category (case-insensitive partial match)
+        min_price: Minimum price filter (inclusive)
+        max_price: Maximum price filter (inclusive)
+
+    Args:
+        make: Vehicle make filter
+        model: Vehicle model filter
+        category: Vehicle category filter
+        min_price: Minimum price filter
+        max_price: Maximum price filter
+        current_user: Current authenticated user
+        service: Vehicle service
+
+    Returns:
+        List of vehicles matching all filter criteria
+
+    Raises:
+        HTTPException: If price parameters are invalid
+    """
+    try:
+        return await service.search_vehicles(
+            make=make,
+            model=model,
+            category=category,
+            min_price=min_price,
+            max_price=max_price,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
 
 
 @router.get("/{vehicle_id}", response_model=VehicleResponse)
