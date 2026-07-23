@@ -1,62 +1,59 @@
-"""Pydantic schemas for request/response validation."""
+"""Pydantic schemas for authentication request/response."""
 from pydantic import BaseModel, EmailStr, Field
 
 
-class UserBase(BaseModel):
-    """Base user schema."""
+class UserRegister(BaseModel):
+    """User registration schema.
 
-    email: EmailStr
+    Attributes:
+        email: Valid email address
+        password: Password, minimum 6 characters
+    """
+
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(
+        ..., min_length=6, description="Password, minimum 6 characters"
+    )
 
 
-class UserRegister(UserBase):
-    """User registration schema."""
+class UserLogin(BaseModel):
+    """User login schema.
 
-    password: str = Field(..., min_length=6)
+    Attributes:
+        email: User email address
+        password: User password
+    """
 
-
-class UserLogin(UserBase):
-    """User login schema."""
-
-    password: str
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
 
 
 class TokenResponse(BaseModel):
-    """Token response schema."""
+    """JWT token response schema.
 
-    access_token: str
-    token_type: str = "bearer"
+    Attributes:
+        access_token: JWT token string
+        token_type: Token type (usually 'bearer')
+    """
 
-
-class VehicleBase(BaseModel):
-    """Base vehicle schema."""
-
-    make: str
-    model: str
-    category: str
-    price: float = Field(..., gt=0)
-    quantity: int = Field(default=0, ge=0)
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
 
 
-class VehicleCreate(VehicleBase):
-    """Vehicle creation schema."""
+class UserResponse(BaseModel):
+    """User response schema (without password).
 
-    pass
+    Attributes:
+        id: User ID
+        email: User email
+        is_admin: Whether user is admin
+    """
 
-
-class VehicleUpdate(BaseModel):
-    """Vehicle update schema."""
-
-    make: str | None = None
-    model: str | None = None
-    category: str | None = None
-    price: float | None = Field(None, gt=0)
-    quantity: int | None = Field(None, ge=0)
-
-
-class VehicleResponse(VehicleBase):
-    """Vehicle response schema."""
-
-    id: int
+    id: int = Field(..., description="User ID")
+    email: str = Field(..., description="User email")
+    is_admin: bool = Field(..., description="Whether user is admin")
 
     class Config:
+        """Pydantic config."""
+
         from_attributes = True
