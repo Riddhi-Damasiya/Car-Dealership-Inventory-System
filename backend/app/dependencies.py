@@ -1,8 +1,8 @@
-"""Dependency injection for routes."""
-from datetime import datetime, timedelta, timezone
+"""Updated dependencies with Bearer token extraction."""
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,18 +10,21 @@ from sqlalchemy.future import select
 from app.config import get_settings
 from app.database import get_db
 from app.models import User
+from app.schemas import TokenResponse
+from app.services.auth_service import create_access_token
 
 settings = get_settings()
+security = HTTPBearer()
 
 
 async def get_current_user(
-    token: Annotated[str, Depends(lambda: None)],
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Get current authenticated user from JWT token.
 
     Args:
-        token: JWT token from Authorization header
+        credentials: HTTP Bearer token from Authorization header
         db: Database session
 
     Returns:
@@ -30,25 +33,23 @@ async def get_current_user(
     Raises:
         HTTPException: If token is invalid or user not found
     """
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    token = credentials.credentials
 
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        user_id: int = payload.get("sub")
+        user_id: int | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
             )
-    except JWTError:
+        user_id = int(user_id)
+    except (JWTError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -57,6 +58,7 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     return user
@@ -80,26 +82,3 @@ async def get_current_admin_user(current_user: User = Depends(get_current_user))
             detail="Admin access required",
         )
     return current_user
-
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Create JWT access token.
-
-    Args:
-        data: Data to encode in token
-        expires_delta: Token expiration time delta
-
-    Returns:
-        Encoded JWT token
-    """
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(
-            minutes=settings.access_token_expire_minutes
-        )
-
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
