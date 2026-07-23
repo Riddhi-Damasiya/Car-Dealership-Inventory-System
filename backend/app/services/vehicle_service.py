@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, and_
 
 from app.models import Vehicle
 from app.schemas import VehicleCreate, VehicleListResponse, VehicleResponse, VehicleUpdate
@@ -153,3 +153,70 @@ class VehicleService:
         await self.db.delete(vehicle)
         await self.db.commit()
         return True
+
+    async def search_vehicles(
+        self,
+        make: str | None = None,
+        model: str | None = None,
+        category: str | None = None,
+        min_price: str | None = None,
+        max_price: str | None = None,
+    ) -> list[VehicleResponse]:
+        """Search and filter vehicles based on criteria.
+
+        All parameters are optional. When multiple filters are provided,
+        they are combined with AND logic (all must match).
+
+        Args:
+            make: Filter by vehicle manufacturer (case-insensitive partial match)
+            model: Filter by vehicle model (case-insensitive partial match)
+            category: Filter by vehicle category (case-insensitive partial match)
+            min_price: Filter by minimum price (inclusive)
+            max_price: Filter by maximum price (inclusive)
+
+        Returns:
+            List of vehicles matching all filter criteria
+
+        Raises:
+            ValueError: If price parameters are invalid
+        """
+        # Build dynamic WHERE clause with all filters
+        filters = []
+
+        if make:
+            filters.append(func.lower(Vehicle.make).contains(make.lower()))
+
+        if model:
+            filters.append(func.lower(Vehicle.model).contains(model.lower()))
+
+        if category:
+            filters.append(func.lower(Vehicle.category).contains(category.lower()))
+
+        # Validate and apply price filters
+        if min_price is not None:
+            try:
+                min_price_decimal = Decimal(min_price)
+                if min_price_decimal < 0:
+                    raise ValueError("Minimum price must be non-negative")
+                filters.append(Vehicle.price >= min_price_decimal)
+            except (InvalidOperation, ValueError) as e:
+                raise ValueError(f"Invalid minimum price: {e}")
+
+        if max_price is not None:
+            try:
+                max_price_decimal = Decimal(max_price)
+                if max_price_decimal < 0:
+                    raise ValueError("Maximum price must be non-negative")
+                filters.append(Vehicle.price <= max_price_decimal)
+            except (InvalidOperation, ValueError) as e:
+                raise ValueError(f"Invalid maximum price: {e}")
+
+        # Execute query with combined filters
+        query = select(Vehicle).order_by(Vehicle.id)
+        if filters:
+            query = query.where(and_(*filters))
+
+        result = await self.db.execute(query)
+        vehicles = result.scalars().all()
+
+        return [VehicleResponse.model_validate(v) for v in vehicles]

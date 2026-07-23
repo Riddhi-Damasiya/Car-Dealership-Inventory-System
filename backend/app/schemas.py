@@ -1,5 +1,6 @@
 """Vehicle Pydantic schemas for request/response validation."""
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -83,3 +84,21 @@ class VehicleListResponse(BaseModel):
     total: int = Field(..., description="Total number of vehicles")
     skip: int = Field(..., description="Items skipped")
     limit: int = Field(..., description="Items limit")
+
+
+class SearchParams(BaseModel):
+    """Search and filter parameters for vehicles.
+
+    Attributes:
+        make: Filter by vehicle manufacturer (optional)
+        model: Filter by vehicle model (optional)
+        category: Filter by vehicle category (optional)
+        min_price: Filter by minimum price (optional)
+        max_price: Filter by maximum price (optional)
+    """
+
+    make: Optional[str] = Field(None, description="Filter by make")
+    model: Optional[str] = Field(None, description="Filter by model")
+    category: Optional[str] = Field(None, description="Filter by category")
+    min_price: Optional[str] = Field(None, description="Filter by minimum price")
+    max_price: Optional[str] = Field(None, description="Filter by maximum price")
